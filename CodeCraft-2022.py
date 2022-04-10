@@ -6,8 +6,6 @@ from random import shuffle
 from copy import deepcopy
 import math
 import time
-# from dinic import Dinic as Graph
-# from EK import Graph
 from functools import reduce
 from read_data import *
 import numpy as np
@@ -46,8 +44,6 @@ class Solution():
         self.tcs_id_record = [[[ [] for _ in range(s_len)] for _ in range(c_len)] for _ in range(t_len)] # tidx, sidx, cidx -> List[iidx]} 
         self.record = np.zeros((t_len, s_len, c_len), dtype=np.int32)
         self.t_s_record = np.zeros((t_len, s_len), dtype=np.int32)
-        self.t_s_include_c = [ [ set() for _ in range(s_len) ] for _ in range(t_len) ]
-        self.after_95_t_4_s = [ set() for _ in range(s_len) ]
     
     def init_qos(self):
         def _qos4c(c_idx: int) -> List[int]:
@@ -177,7 +173,7 @@ class Solution():
         self.tcs_id_record[tidx][cidx][sidx].append(iidx)
         return True
     
-    def dispatch(self):
+    def dispatch_baseline(self):
         for tidx in range(t_len):
             for iidx, demands in client_demand[tidx].items():
                 for cidx, need_dispatch in enumerate(demands):
@@ -185,10 +181,56 @@ class Solution():
                         success = self.assign(tidx, sidx, cidx, iidx, need_dispatch)
                         if success: break
 
+    def dispatch(self):
+        s_include_t = [ set() for _ in range(s_len) ]
+        for tidx in range(t_len):
+            for iidx, demands in client_demand[tidx].items():
+                for cidx, need_dispatch in enumerate(demands):
+                    success = False
+                    for sidx in self.qos_avail_for_c[cidx]:
+                        if len(s_include_t[sidx]) < 5 or tidx in s_include_t[sidx]:
+                            success = self.assign(tidx, sidx, cidx, iidx, need_dispatch)
+                            if success: 
+                                s_include_t[sidx].add(tidx)
+                                break
+                    if not success:
+                        s_avail_list = self.qos_avail_for_c[cidx]
+                        record_at_t = self.t_s_record[tidx][s_avail_list]
+                        idx = np.argmin(record_at_t)
+                        sidx = s_avail_list[idx]
+                        success = self.assign(tidx, sidx, cidx, iidx, need_dispatch)
+                        if success: continue
+                        perc_30_num = math.ceil(len(s_avail_list) * 0.3)
+                        if perc_30_num >= 3:
+                            arg = np.argpartition(record_at_t, perc_30_num)[:perc_30_num]
+                            for i in arg:
+                                sidx = s_avail_list[i]
+                                success = self.assign(tidx, sidx, cidx, iidx, need_dispatch)
+                                if success: 
+                                    break
+                            if success: continue
+                            for i in arg[perc_30_num:]:
+                                sidx = s_avail_list[i]
+                                success = self.assign(tidx, sidx, cidx, iidx, need_dispatch)
+                                if success: 
+                                    break
+                        else:
+                            arg = np.argsort(record_at_t)
+                            for i in arg[1:]:
+                                sidx = s_avail_list[i]
+                                success = self.assign(tidx, sidx, cidx, iidx, need_dispatch)
+                                if success: 
+                                    break
+            # if tidx < 20:
+            #     tmp = [ len(i) for i in s_include_t ]
+            #     print(f'time {tidx}: t in top 5 s: {tmp}')
+
+
 if __name__ == '__main__':
     get_data()
     start_time = time.time()
     s = Solution()
+    # s.dispatch_baseline()
     s.dispatch()
     if LOCAL: 
         print(f'used time normal: {(time.time()-start_time):.2f}')
